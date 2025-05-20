@@ -1,0 +1,207 @@
+🎯 Goal of the Project
+To build a model that can predict the probability of a team winning while chasing a target, using live match conditions like current score, wickets left, and run rate.
+
+🧩 STEP-BY-STEP LOGIC
+Step 1: Import Required Libraries
+python
+Copy
+Edit
+import pandas as pd, numpy as np, seaborn as sns, matplotlib.pyplot as plt, etc.
+These provide tools for data processing, visualization, and machine learning.
+
+%matplotlib inline shows plots in the notebook.
+
+warnings.filterwarnings('ignore') hides unnecessary warnings.
+
+Step 2: Load Data
+python
+Copy
+Edit
+matches = pd.read_csv('matches.csv')
+deliveries = pd.read_csv('deliveries.csv')
+matches.csv: Summarized match data (teams, results, etc.).
+
+deliveries.csv: Ball-by-ball data for each match.
+
+🧠 Logic: You need overall match results to know who won, and ball-level data to understand what happened during the match.
+
+Step 3: Create First Innings Total Runs
+python
+Copy
+Edit
+totalrun_df = deliveries.groupby(['match_id','inning']).sum()['total_runs'].reset_index()
+Sums total runs for each match and each inning.
+
+Then filter only inning 1:
+
+python
+Copy
+Edit
+totalrun_df = totalrun_df[totalrun_df['inning']==1]
+🧠 Logic: You want to predict if the second-innings team can chase the first innings total — so you must first extract those totals.
+
+Step 4: Merge First-Innings Runs with Match Info
+python
+Copy
+Edit
+match_df = matches.merge(totalrun_df[['match_id','total_runs']], left_on='id', right_on='match_id')
+🧠 Logic: Add the target runs to each match record. This lets you compare actual second innings data against the target.
+
+Step 5: Clean Team Names
+python
+Copy
+Edit
+# Example
+match_df['team1'] = match_df['team1'].str.replace('Delhi Daredevils', 'Delhi Capitals')
+🧠 Logic: Some teams have changed names (e.g., Deccan Chargers → Sunrisers Hyderabad). Standardizing names ensures consistent data.
+
+Step 6: Filter for Top 8 Active Teams
+python
+Copy
+Edit
+match_df = match_df[match_df['team1'].isin(teams)]
+🧠 Logic: Limit to current, active teams for better accuracy and consistency.
+
+Step 7: Remove Rain-Affected Matches (DLS)
+python
+Copy
+Edit
+match_df = match_df[match_df['dl_applied'] == 0]
+🧠 Logic: Duckworth-Lewis system adjusts targets, complicating real-time prediction. So you exclude these to keep data clean.
+
+Step 8: Merge Ball-by-Ball Data with Match Info
+python
+Copy
+Edit
+delivery_df = match_df.merge(deliveries, on='match_id')
+🧠 Logic: You combine delivery-level info (balls, runs, wickets) with the match info (teams, target).
+
+Step 9: Focus on Second Innings
+python
+Copy
+Edit
+delivery_df = delivery_df[delivery_df['inning'] == 2]
+🧠 Logic: We're predicting if the chasing team wins, so only second innings is relevant.
+
+Step 10: Feature Engineering
+These are crucial metrics in a chase:
+
+10.1 Current Score
+python
+Copy
+Edit
+delivery_df['current_score'] = delivery_df.groupby('match_id')['total_runs_y'].cumsum()
+10.2 Runs Left
+python
+Copy
+Edit
+delivery_df['runs_left'] = delivery_df['total_runs_x'] - delivery_df['current_score']
+10.3 Balls Left
+python
+Copy
+Edit
+delivery_df['balls_left'] = 126 - (delivery_df['over']*6 + delivery_df['ball'])
+126 instead of 120 to adjust for indexing from 1.
+
+10.4 Wickets Left
+python
+Copy
+Edit
+# First convert player_dismissed to binary: 0 = not out, 1 = out
+delivery_df['player_dismissed'] = ...
+# Then calculate wickets lost and subtract from 10
+wickets = delivery_df.groupby('match_id')['player_dismissed'].cumsum()
+delivery_df['wickets'] = 10 - wickets
+10.5 Run Rates
+python
+Copy
+Edit
+delivery_df['current_run_rate'] = (current_score * 6) / balls_faced
+delivery_df['req_run_rate'] = (runs_left * 6) / balls_left
+🧠 Logic: These features (runs needed, balls left, wickets left, etc.) mirror what a commentator or analyst would use to assess match situation.
+
+Step 11: Label the Outcome
+python
+Copy
+Edit
+def resultfun(row):
+    return 1 if row['batting_team'] == row['winner'] else 0
+delivery_df['result'] = delivery_df.apply(resultfun, axis=1)
+🧠 Logic: Create a binary label:
+
+1 → chasing team won
+
+0 → chasing team lost
+
+This is your target variable.
+
+Step 12: Prepare Final Dataset
+python
+Copy
+Edit
+final_df = delivery_df[['batting_team','bowling_team','city','runs_left','balls_left','wickets','total_runs_x','current_run_rate','req_run_rate','result']]
+🧠 Logic: Select only relevant columns for prediction.
+
+Step 13: Remove Null or Invalid Cases
+python
+Copy
+Edit
+final_df = final_df.dropna()
+final_df = final_df[final_df['balls_left'] != 0]
+🧠 Logic: Clean up any matches with missing data or no remaining balls (end of innings).
+
+🧠 Machine Learning Phase
+Step 14: Train-Test Split
+python
+Copy
+Edit
+x_train, x_test, y_train, y_test = train_test_split(...)
+🧠 Logic: Split into training and testing sets to evaluate model performance fairly.
+
+Step 15: Encoding Categorical Variables
+python
+Copy
+Edit
+cf = ColumnTransformer([('trf', OneHotEncoder(), ['batting_team', 'bowling_team', 'city'])], remainder='passthrough')
+🧠 Logic: Convert text columns into numbers using One-Hot Encoding.
+
+Step 16: Build Pipeline with Logistic Regression
+python
+Copy
+Edit
+pipe = Pipeline([('step1', cf), ('step2', LogisticRegression())])
+pipe.fit(x_train, y_train)
+🧠 Logic: Automatically applies preprocessing before training model.
+
+Step 17: Evaluate Model
+python
+Copy
+Edit
+y_pred = pipe.predict(x_test)
+print(metrics.accuracy_score(...))
+print(metrics.classification_report(...))
+🧠 Logic: Measures model accuracy and precision/recall for both win/loss classes.
+
+Step 18: Try Better Model - Random Forest
+python
+Copy
+Edit
+pipe2 = Pipeline([... RandomForestClassifier()])
+pipe2.fit(x_train, y_train)
+🧠 Logic: Random Forest handles nonlinear relationships and interactions better than logistic regression.
+
+Step 19: Save Model
+python
+Copy
+Edit
+pickle.dump(pipe, open('pipe.pkl','wb'))
+🧠 Logic: Store the model so it can be reused for predictions during live matches.
+
+✅ Summary of Key Features Used for Prediction
+Feature	Logic
+runs_left	Tells how close the team is to the target
+balls_left	Indicates time left to achieve the target
+wickets	Reflects batting strength remaining
+current_run_rate	Shows current scoring momentum
+req_run_rate	Pressure: how fast the team needs to score
+batting_team, bowling_team, city	Contextual match conditions (venue advantage, etc.)
