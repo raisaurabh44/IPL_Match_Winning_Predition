@@ -142,4 +142,5 @@ This project is licensed under the MIT License.
 ---
 
 **Let’s make IPL analytics beautiful, insightful, and actionable!**
+![IPL Match Win Predictor Flowchart](https://github.com/user-attachments/assets/3cf49293-527b-4dec-afd5-d07cde036961)
 
